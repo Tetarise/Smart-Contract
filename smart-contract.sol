@@ -175,9 +175,6 @@ contract MintableToken is StandardToken, Ownable {
     uint256 _decimals
     )
   {
-  //  require(_name != '');
-  //  require(_symbol != '');
-//    require(_decimals != 0);
 
     name = _name;
     symbol = _symbol;
@@ -217,59 +214,72 @@ contract CrowdFunding {
     using SafeMath for uint256;
 
     //constants
-    uint256 public constant TOTAL_TOKENS_FOR_SOLD = 70000000;
-    uint256 public constant TOTAL_TOKENS_FOR_COMMAND = 25000000;
-    uint256 public constant TOTAL_TOKENS_FOR_BONUSES = 2000000;
-    uint256 public constant TOTAL_TOKENS_FOR_MENTORS = 3000000;
+    uint256 public constant TOTAL_TOKENS_FOR_SOLD = 70000000;//total tokens for sold
+    uint256 public constant TOTAL_TOKENS_FOR_COMMAND = 25000000;//total command tokens
+    uint256 public constant TOTAL_TOKENS_FOR_BONUSES = 2000000;//total tokens for bonuses
+    uint256 public constant TOTAL_TOKENS_FOR_MENTORS = 3000000;//total tokens or mentors
 
     //variables
-    address public beneficiary;
-    uint256 public totalTokensSolded = 0;
-    MintableToken public token;
-    uint8 public currentDiscount = 0;
-    uint256 public collectedWei = 0;
-    uint256 private collectedWeiInEth = 0;
-    uint256 public oneSouthenTokenPrice;
-    uint256 public currentTokenPriceWithDiscount = 0;
-    uint256 public aviableTokensForSold = 0;
-    mapping (address => uint256) funders;
+    address public beneficiary;//beneficiary address
+    address public managmentAddress;//menegment address
+    uint256 public totalTokensSolded = 0;//total tokens solded
+    MintableToken public token;//Tetarise token contract
+    uint8 public currentDiscount = 0;//current discount
+    uint256 public collectedWei = 0;// collected wei
+    uint256 private collectedWeiInEth = 0;// collected wei in eth
+    uint256 public oneSouthenTokenPrice;//token price
+    uint256 public currentTokenPriceWithDiscount = 0;// oe token price with discount
+    uint256 public aviableTokensForSold = 0;// total tokens for sold
+    mapping (address => uint256) funders;//founders list
+    //ICO status
     enum State{
-      Init,
-      ICORunning,
-      ICOPaused,
-      ICOFinished
+      Init,//initial status
+      ICORunning,//ICO running
+      ICOPaused,//ICO paused
+      ICOFinished//ICO finished
     }
 
-    State public currentState = State.Init;
+    State public currentState = State.Init; //defoult status for start
 
     //events
-    event LogStateSwitch(State newState);
-    event DiscountChanged(uint8 discount);
-    event NewTokenPrice(uint256 price);
-    event ReturnMoneyToFounder(address recipient, uint256 value);
-    event TokenPurchase(address to, address _beneficiary, uint256 weiAmount, uint256 tokens);
+    event LogStateSwitch(State newState);// ICO state changed
+    event DiscountChanged(uint8 discount);// discount changed
+    event NewTokenPrice(uint256 price);// new token price
+    event ReturnMoneyToFounder(address recipient, uint256 value);//return money to founder
+    event TokenPurchase(address to, address _beneficiary, uint256 tokens);//token purchase
 
     // Modifiers:
+    //only creator
     modifier onlyCreator() {
       require(msg.sender==beneficiary);
       _;
     }
+    //onlu for state {state}
     modifier onlyInState(State state){
       require(state==currentState);
       _;
     }
+    //only managment address
+    modifier onlyManagment() {
+      require(msg.sender==managmentAddress || msg.sender==beneficiary);
+      _;
+    }
 
+    //CrowdFunding contract
     function CrowdFunding(
       address beneficiaryAddressValue,
       string tokenName,
       string tokenSymbol,
       uint8 discount,
-      uint256 tokenPrice1000Tokens
+      uint256 tokenPrice1500Tokens,
+      address addressForManagment
       ){
         require(beneficiaryAddressValue != 0x0);
-        require(tokenPrice1000Tokens != 0);
+        require(tokenPrice1500Tokens != 0);
+        require(addressForManagment != 0x0);
 
-        oneSouthenTokenPrice = tokenPrice1000Tokens * 1 ether;
+        managmentAddress = addressForManagment;
+        oneSouthenTokenPrice = tokenPrice1500Tokens * 1 ether;
         beneficiary = beneficiaryAddressValue;
         token = createTokenContract(tokenName, tokenSymbol, 0);
 
@@ -277,30 +287,36 @@ contract CrowdFunding {
         setDiscount(discount);
     }
 
+    //function for start ICO
     function startICO() public onlyCreator onlyInState(State.Init) {
          setState(State.ICORunning);
          aviableTokensForSold = TOTAL_TOKENS_FOR_SOLD;
          token.mint(beneficiary, getSumTokensForBeneficiary());
     }
 
+    //function for pause ICO
     function pauseICO() public onlyCreator onlyInState(State.ICORunning) {
          setState(State.ICOPaused);
     }
 
+    // function for resume ICO
     function resumeICO() public onlyCreator onlyInState(State.ICOPaused) {
          setState(State.ICORunning);
     }
 
+    //function for finish ICO
     function finishICO() public onlyCreator onlyInState(State.ICORunning) {
          setState(State.ICOFinished);
          token.finishMinting();
     }
 
+    // set CrowdFunding contarct status
     function setState(State _s) internal {
          currentState = _s;
          LogStateSwitch(_s);
     }
 
+    //Create token function
     function createTokenContract (
       string tokenName,
       string tokenSymbol,
@@ -310,16 +326,19 @@ contract CrowdFunding {
       return new MintableToken(tokenName, tokenSymbol, tokenDecimals);
     }
 
+    //return sum tokens for beneficiary address
     function getSumTokensForBeneficiary() internal returns(uint256) {
       return TOTAL_TOKENS_FOR_COMMAND.add(TOTAL_TOKENS_FOR_MENTORS).add(TOTAL_TOKENS_FOR_BONUSES);
     }
 
+    //Set discount for token price
     function setDiscount(uint8 discount) public onlyCreator {
       currentDiscount = discount;
       DiscountChanged(discount);
       setCurrentTokenPriceWithDiscount();
     }
 
+    //return token price with discount
     function setCurrentTokenPriceWithDiscount() internal {
          uint256 discountSum;
          discountSum = oneSouthenTokenPrice.div(100);
@@ -328,44 +347,48 @@ contract CrowdFunding {
          NewTokenPrice(currentTokenPriceWithDiscount);
     }
 
+    //function run when money sent
     function () payable onlyInState(State.ICORunning){
         require(msg.value!=0);
-        if (msg.value < currentTokenPriceWithDiscount){
+        if (msg.value < currentTokenPriceWithDiscount.div(1500)){
           returnMoneyToSender();
         }else{
-          uint256 weiAmount = msg.value;
-          uint256 tokens = weiAmount.div(currentTokenPriceWithDiscount.div(1000));
+          //uint256 weiAmount = msg.value;
+          uint256 tokens = msg.value.div(currentTokenPriceWithDiscount.div(1500));
           if (aviableTokensForSold >= tokens) {
-            collectedWei = collectedWei.add(weiAmount);
-            collectedWeiInEth = collectedWeiInEth.add(weiAmount);
-            funders[msg.sender] = funders[msg.sender].add(weiAmount);
-            sendTokens(msg.sender, tokens, weiAmount);
+            collectedWei = collectedWei.add(msg.value);
+            collectedWeiInEth = collectedWeiInEth.add(msg.value);
+            funders[msg.sender] = funders[msg.sender].add(msg.value);
+            sendTokens(msg.sender, tokens);
           }else{
             returnMoneyToSender();
           }
         }
    }
 
-   function sendTokens(address to, uint256 tokens, uint256 weiAmount) internal {
+   // send tokens to founder address
+   function sendTokens(address to, uint256 tokens) internal {
      token.mint(to, tokens);
      totalTokensSolded = totalTokensSolded.add(tokens);
      aviableTokensForSold = TOTAL_TOKENS_FOR_SOLD.sub(totalTokensSolded);
-     TokenPurchase(to, beneficiary, weiAmount, tokens);
+     TokenPurchase(to, beneficiary, tokens);
    }
 
+   //return money to sender
    function returnMoneyToSender() internal{
        address returnAddress = msg.sender;
        returnAddress.transfer(msg.value);
        ReturnMoneyToFounder(returnAddress, msg.value);
    }
 
+   //send collected wei to beneficiary address from contract
    function sendCollectedWeiToBeneficiary() public onlyCreator {
        beneficiary.transfer(collectedWeiInEth);
    }
 
-   function sendTokensForAnotherCurrency(address to, uint256 tokens, uint256 weiAmount) public onlyCreator onlyInState(State.ICORunning){
+   //send tokens to founders if founders pay in other currency
+   function sendTokensForAnotherCurrency(address to, uint256 tokens) public onlyManagment {
       require(aviableTokensForSold >= tokens);
-      sendTokens(to, tokens, weiAmount);
-      funders[to] = funders[to].add(weiAmount);
+      sendTokens(to, tokens);
    }
 }
